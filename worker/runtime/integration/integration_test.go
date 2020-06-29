@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+//Note: Some of these integration tests call on functionality that manipulates
+//the iptable rule set. They lack isolation and, therefore, should never be run in parallel.
 type IntegrationSuite struct {
 	suite.Suite
 	*require.Assertions
@@ -132,6 +134,14 @@ func (s *IntegrationSuite) setupRootfs() {
 func (s *IntegrationSuite) TearDownTest() {
 	s.gardenBackend.Stop()
 	os.RemoveAll(s.rootfs)
+	s.cleanupIptables()
+}
+
+func (s *IntegrationSuite) cleanupIptables() {
+	//Flush all rules
+	exec.Command("iptables", "-F").Run()
+	//Delete all user-defined chains
+	exec.Command("iptables", "-X").Run()
 }
 
 func (s *IntegrationSuite) TestPing() {
@@ -219,9 +229,7 @@ func (s *IntegrationSuite) TestContainerNetworkEgressWithDenyNetwork() {
 	namespace := "test-deny-network"
 	requestTimeout := 3 * time.Second
 
-	network, err := runtime.NewCNINetwork(
-
-		)
+	network, err := runtime.NewCNINetwork()
 
 	s.NoError(err)
 
@@ -270,10 +278,8 @@ func (s *IntegrationSuite) TestContainerNetworkEgressWithDenyNetwork() {
 	exitCode, err := proc.Wait()
 	s.NoError(err)
 
-	s.Equal(exitCode, 1)
+	s.Equal(exitCode, 1, "Process in container should not be able to connect to restricted network")
 	s.Contains(buf.String(), "connect: connection refused")
-
-	//TODO: clean up iptables entries
 }
 
 // TestRunPrivileged tests whether we're able to run a process in a privileged

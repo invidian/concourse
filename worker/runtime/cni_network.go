@@ -165,6 +165,7 @@ func NewCNINetwork(opts ...CNINetworkOpt) (*cniNetwork, error) {
 		binariesDir: binariesDir,
 		config:      defaultCNINetworkConfig,
 		nameServers: defaultNameServers,
+		denyNetworks: []string{"1.1.1.1"},//TODO: change this to be set with options pattern instead
 	}
 
 	for _, opt := range opts {
@@ -230,13 +231,16 @@ func (n cniNetwork) SetupMounts(handle string) ([]specs.Mount, error) {
 }
 
 func (n cniNetwork) SetupDenyNetwork() error {
-	if len(n.denyNetworks) > 0 {
-		err := createIptablesChain()
+	err := createIptablesChain()
+	if err != nil {
+		return err
+	}
+
+	for _, network := range n.denyNetworks {
+		err = createRejectRules(network, "CNI-ADMIN")
 		if err != nil {
 			return err
 		}
-
-		return  createRejectRules(n.denyNetworks)
 	}
 	return nil
 }
@@ -250,10 +254,10 @@ func createIptablesChain() error {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			// Ignore error if Chain already exists
 			if string(exitErr.Stderr) != "iptables: Chain already exists.\n" {
-				return fmt.Errorf("failed to create chain CNI-ADMIN: %s", string(exitErr.Stderr))
+				return fmt.Errorf("failed to create iptables chain CNI-ADMIN: %s", string(exitErr.Stderr))
 			}
 		} else {
-			return fmt.Errorf("failed to create chain CNI-ADMIN: %w", err)
+			return fmt.Errorf("failed to create iptables chain CNI-ADMIN: %w", err)
 		}
 	}
 
@@ -265,17 +269,19 @@ func createIptablesChain() error {
 
 // Case 1 - new rule added - worker restarted with a new CONCOURSE_GARDEN_DENY_NETWORK
 // Case 2 - old rule removed
-func createRejectRules(denyNetworks []string) error {
-	cmd := exec.Command("iptables", "-C", "CNI-ADMIN", "-d", "1.1.1.1", "-j", "REJECT")
+func createRejectRules(denyNetwork string, targetChain string) error {
+	// Check if reject rule exists
+	cmd := exec.Command("iptables", "-C", targetChain, "-d", "1.1.1.1", "-j", "REJECT")
 	err := cmd.Run()
 	if err != nil {
-
-		cmd = exec.Command("iptables", "-F", "CNI-ADMIN")
+		// Delete all rules in chain
+		cmd = exec.Command("iptables", "-F", targetChain)
 		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("failed to flush chain: %w", err)
 		}
-		cmd = exec.Command("iptables", "-A", "CNI-ADMIN", "-d", "1.1.1.1", "-j", "REJECT")
+		// Append reject rule
+		cmd = exec.Command("iptables", "-A", targetChain, "-d", "1.1.1.1", "-j", "REJECT")
 		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("failed to create REJECT rule: %w", err)
