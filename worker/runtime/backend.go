@@ -109,12 +109,6 @@ func NewGardenBackend(client libcontainerd.Client, opts ...GardenBackendOpt) (b 
 // Start initializes the client.
 //
 func (b *GardenBackend) Start() (err error) {
-	//TODO where is the right place to call this  ?
-	err = b.network.SetupDenyNetwork()
-	if err != nil {
-		return fmt.Errorf("setup deny network failed: %w", err)
-	}
-
 	err = b.client.Init()
 	if err != nil {
 		return fmt.Errorf("client init: %w", err)

@@ -140,7 +140,8 @@ func WithCNIFileStore(f FileStore) CNINetworkOpt {
 	}
 }
 
-//TODO Add description
+// WithDenyNetworks defines the network ranges that containers will be restricted
+// from accessing.
 func WithDenyNetworks(denyNetworks []string) CNINetworkOpt {
 	return func(n *cniNetwork) {
 		n.denyNetworks = denyNetworks
@@ -165,7 +166,6 @@ func NewCNINetwork(opts ...CNINetworkOpt) (*cniNetwork, error) {
 		binariesDir: binariesDir,
 		config:      defaultCNINetworkConfig,
 		nameServers: defaultNameServers,
-		denyNetworks: []string{"1.1.1.1"},//TODO: change this to be set with options pattern instead
 	}
 
 	for _, opt := range opts {
@@ -189,6 +189,12 @@ func NewCNINetwork(opts ...CNINetworkOpt) (*cniNetwork, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cni configuration loading: %w", err)
 		}
+	}
+
+	//TODO where is the right place to call this  ?
+	err = n.setupDenyNetwork()
+	if err != nil {
+		return nil, fmt.Errorf("setup deny network failed: %w", err)
 	}
 
 	return n, nil
@@ -230,7 +236,7 @@ func (n cniNetwork) SetupMounts(handle string) ([]specs.Mount, error) {
 	}, nil
 }
 
-func (n cniNetwork) SetupDenyNetwork() error {
+func (n cniNetwork) setupDenyNetwork() error {
 	err := createIptablesChain()
 	if err != nil {
 		return err
@@ -271,7 +277,7 @@ func createIptablesChain() error {
 // Case 2 - old rule removed
 func createRejectRules(denyNetwork string, targetChain string) error {
 	// Check if reject rule exists
-	cmd := exec.Command("iptables", "-C", targetChain, "-d", "1.1.1.1", "-j", "REJECT")
+	cmd := exec.Command("iptables", "-C", targetChain, "-d", denyNetwork, "-j", "REJECT")
 	err := cmd.Run()
 	if err != nil {
 		// Delete all rules in chain
@@ -281,7 +287,7 @@ func createRejectRules(denyNetwork string, targetChain string) error {
 			return fmt.Errorf("failed to flush chain: %w", err)
 		}
 		// Append reject rule
-		cmd = exec.Command("iptables", "-A", targetChain, "-d", "1.1.1.1", "-j", "REJECT")
+		cmd = exec.Command("iptables", "-A", targetChain, "-d", denyNetwork, "-j", "REJECT")
 		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("failed to create REJECT rule: %w", err)

@@ -221,7 +221,7 @@ func (s *IntegrationSuite) TestContainerNetworkEgress() {
 	s.Equal("200 OK\n", buf.String())
 }
 
-// TestContainerNetworkEgressWithDenyNetwork aims at verifying that a process that we run in a
+// TestContainerNetworkEgressWithDenyNetwork verifies that a process that we run in a
 // container that we create through our gardenBackend is not able to reach an address that
 // we have blocked access to.
 //
@@ -229,7 +229,9 @@ func (s *IntegrationSuite) TestContainerNetworkEgressWithDenyNetwork() {
 	namespace := "test-deny-network"
 	requestTimeout := 3 * time.Second
 
-	network, err := runtime.NewCNINetwork()
+	network, err := runtime.NewCNINetwork(
+		runtime.WithDenyNetworks([]string{"1.1.1.1"}),
+	)
 
 	s.NoError(err)
 
